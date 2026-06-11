@@ -1,48 +1,55 @@
 #include <Arduino.h>
-#include <SPI.h>
-#include "MT6835.h"
+#include <SimpleFOC.h>
 
-// 요청하신 핀 번호 설정 반영
-#define CS_PIN 13
-#define SCK_PIN 18
-#define MISO_PIN 19
-#define MOSI_PIN 23
+// 모터 극쌍수 (RI50 = 7)
+BLDCMotor motor = BLDCMotor(7);
 
-// 기타 설정
-#define SPI_FREQ_MOT   1000000   // SPI 통신 속도 (1MHz)
-#define ABZ_A_PIN_MOT  34        // 인코더 A상 핀 (기존 유지, 필요시 변경)
-#define ABZ_B_PIN_MOT  35        // 인코더 B상 핀 (기존 유지, 필요시 변경)
+// A:16, B:5, C:17, EN:4
+BLDCDriver3PWM driver = BLDCDriver3PWM(16, 5, 17, 4);
 
-// Magnetic Encoder Class (CS_PIN을 새로 정의한 이름으로 적용)
-MT6835 mt6835(CS_PIN, SPI_FREQ_MOT, ABZ_A_PIN_MOT, ABZ_B_PIN_MOT);
+// 목표 속도를 저장할 변수 (초기값: 0 rad/s - 정지 상태로 시작)
+float target_velocity = 0;
+
+// 시리얼 커맨드 객체 생성
+Commander command = Commander(Serial);
+
+// 커맨드 콜백 함수 생성
+// V가 입력되면 target_velocity 값을 변경
+void doVelocity(char* cmd) { command.scalar(&target_velocity, cmd); }
+// L이 입력되면 motor.voltage_limit 값을 변경
+void doLimit(char* cmd) { command.scalar(&motor.voltage_limit, cmd); }
 
 void setup() {
-    Serial.begin(115200); 
-    while(!Serial) {} // Wait for Serial to initialize
+  Serial.begin(115200);
+  
+  // 드라이버 설정
+  driver.voltage_power_supply = 24;
+  driver.init();
+  motor.linkDriver(&driver);
 
-    // ESP32의 SPI 버스를 설정한 핀으로 명시적 초기화 (SCK, MISO, MOSI, SS)
-    SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN, CS_PIN);
+  // 초기 전압 제한 설정
+  motor.voltage_limit = 1.5; 
+  motor.velocity_limit = 3;
 
-    // Encoder initialization
-    mt6835.initialize();
+  // 제어 모드: 속도 오픈 루프
+  motor.controller = MotionControlType::velocity_openloop;
+  
+  motor.init();
 
-    delay(1000);
-    Serial.println("MT6835 Encoder Ready!");
+  // 커맨드 문자에 콜백 함수 연결
+  command.add('V', doVelocity, (char*)"Target Velocity (rad/s)");
+  command.add('L', doLimit, (char*)"Voltage Limit (V)");
+
+  Serial.println("--- Motor Ready ---");
+  Serial.println("Commands:");
+  Serial.println("  V[값] : 속도 변경 (예: V5, V-10)");
+  Serial.println("  L[값] : 전압 제한 변경 (예: L4.5, L2)");
 }
 
-void loop() { 
-    // Absolute Angle
-    float abs = mt6835.readAbsAng(); 
-
-    // Incremental Angle
-    float inc = mt6835.readIncAng(); 
-
-    // 시리얼 플로터나 모니터에서 값을 보기 위해 출력
-    Serial.print(">abs: ");  
-    Serial.print(abs, 5);  
-    Serial.print("\t>inc: ");    
-    Serial.println(inc, 5); 
-
-    // 시리얼 모니터가 너무 빠르게 지나가지 않도록 약간의 딜레이
-    delay(10);
+void loop() {
+  // 설정된 목표 속도로 모터 구동
+  motor.move(target_velocity);
+  
+  // 시리얼 모니터에서 들어오는 명령을 계속 확인하고 실행
+  command.run();
 }
