@@ -1,55 +1,34 @@
 #include <Arduino.h>
-#include <SimpleFOC.h>
+#include <Adafruit_NeoPixel.h>
 
-// 모터 극쌍수 (RI50 = 7)
-BLDCMotor motor = BLDCMotor(7);
+#define PIN        21  
+#define NUMPIXELS  30  
 
-// A:16, B:5, C:17, EN:4
-BLDCDriver3PWM driver = BLDCDriver3PWM(16, 5, 17, 4);
+// 네오픽셀 설정
+Adafruit_NeoPixel strip(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 
-// 목표 속도를 저장할 변수 (초기값: 0 rad/s - 정지 상태로 시작)
-float target_velocity = 0;
-
-// 시리얼 커맨드 객체 생성
-Commander command = Commander(Serial);
-
-// 커맨드 콜백 함수 생성
-// V가 입력되면 target_velocity 값을 변경
-void doVelocity(char* cmd) { command.scalar(&target_velocity, cmd); }
-// L이 입력되면 motor.voltage_limit 값을 변경
-void doLimit(char* cmd) { command.scalar(&motor.voltage_limit, cmd); }
+// 함수 선언 (VS Code/C++ 필수 규칙)
+void rainbow(int wait);
 
 void setup() {
-  Serial.begin(115200);
+  strip.begin();           // 네오픽셀 시작
   
-  // 드라이버 설정
-  driver.voltage_power_supply = 24;
-  driver.init();
-  motor.linkDriver(&driver);
-
-  // 초기 전압 제한 설정
-  motor.voltage_limit = 1.5; 
-  motor.velocity_limit = 3;
-
-  // 제어 모드: 속도 오픈 루프
-  motor.controller = MotionControlType::velocity_openloop;
+  // [전력 보호] 밝기를 30으로 제한 (테스트용)
+  strip.setBrightness(30); 
   
-  motor.init();
-
-  // 커맨드 문자에 콜백 함수 연결
-  command.add('V', doVelocity, (char*)"Target Velocity (rad/s)");
-  command.add('L', doLimit, (char*)"Voltage Limit (V)");
-
-  Serial.println("--- Motor Ready ---");
-  Serial.println("Commands:");
-  Serial.println("  V[값] : 속도 변경 (예: V5, V-10)");
-  Serial.println("  L[값] : 전압 제한 변경 (예: L4.5, L2)");
+  strip.show();            // 일단 다 끈 상태로 시작
 }
 
 void loop() {
-  // 설정된 목표 속도로 모터 구동
-  motor.move(target_velocity);
-  
-  // 시리얼 모니터에서 들어오는 명령을 계속 확인하고 실행
-  command.run();
+  // 무지개 효과 함수 실행 (속도: 10)
+  rainbow(10); 
+}
+
+// 🌈 무지개 효과 함수
+void rainbow(int wait) {
+  for(long firstPixelHue = 0; firstPixelHue < 5*65536; firstPixelHue += 256) {
+    strip.rainbow(firstPixelHue);
+    strip.show();            // 실제 LED에 출력
+    delay(wait);
+  }
 }
